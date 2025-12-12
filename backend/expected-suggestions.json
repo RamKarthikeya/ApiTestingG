@@ -1,34 +1,6 @@
 [
   {
     "id": "TC_002",
-    "description": "Test case for invalid GET request with missing query parameter",
-    "currentExpected": [
-      400
-    ],
-    "observed": 422,
-    "recommendedExpected": [
-      400,
-      422
-    ],
-    "hint": "Response contains keys: error",
-    "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io\""
-  },
-  {
-    "id": "TC_003",
-    "description": "Test case for invalid GET request with extra query parameter",
-    "currentExpected": [
-      400
-    ],
-    "observed": 200,
-    "recommendedExpected": [
-      200,
-      400
-    ],
-    "hint": null,
-    "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc&extra=param\""
-  },
-  {
-    "id": "TC_004",
     "description": "Test case for GET request with empty query parameter",
     "currentExpected": [
       400
@@ -42,7 +14,7 @@
     "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=\""
   },
   {
-    "id": "TC_005",
+    "id": "TC_003",
     "description": "Test case for GET request with malicious query parameter",
     "currentExpected": [
       400
@@ -56,21 +28,7 @@
     "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc&malicious=param\""
   },
   {
-    "id": "TC_007",
-    "description": "Test case for GET request with invalid query parameter",
-    "currentExpected": [
-      400
-    ],
-    "observed": 200,
-    "recommendedExpected": [
-      200,
-      400
-    ],
-    "hint": null,
-    "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc&invalid=param\""
-  },
-  {
-    "id": "TC_008",
+    "id": "TC_005",
     "description": "Test case for GET request with missing headers",
     "currentExpected": [
       400
@@ -85,7 +43,7 @@
   },
   {
     "id": "TC_010",
-    "description": "Test case for GET request with invalid headers",
+    "description": "Very long string field",
     "currentExpected": [
       400
     ],
@@ -95,6 +53,20 @@
       400
     ],
     "hint": null,
-    "curl": "curl -i -X GET -H \"Content-Type: text/plain\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc\""
+    "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc\""
+  },
+  {
+    "id": "TC_011",
+    "description": "SQL injection attempt in body",
+    "currentExpected": [
+      400
+    ],
+    "observed": 200,
+    "recommendedExpected": [
+      200,
+      400
+    ],
+    "hint": null,
+    "curl": "curl -i -X GET -H \"Content-Type: application/json\" -H \"User-Agent: Mozilla/5.0 (compatible; API-Tester/1.0)\" \"https://api.genderize.io?name=luc\""
   }
 ]

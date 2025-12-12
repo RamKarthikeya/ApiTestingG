@@ -1,7 +1,8 @@
-// src/app.js  (improved)
+// src/app.js
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import bodyParser from 'body-parser';
 import { config } from './config/env.js';
 import testRoutes from './routes/test.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -16,8 +17,38 @@ app.use(cors({
   credentials: true
 }));
 
-// Body Parsing
-app.use(express.json({ limit: '10mb' }));
+/**
+ * Robust body parsing:
+ * - Accept raw text for all content-types to avoid throwing on invalid JSON.
+ * - Attach req.rawBody and req.safeBody for routes to use.
+ */
+app.use(bodyParser.text({ type: '*/*', limit: '10mb' }));
+
+app.use((req, _res, next) => {
+  // If some middleware already produced a parsed object, keep it.
+  if (req.body && typeof req.body === 'object') {
+    req.rawBody = null;
+    req.safeBody = req.body;
+    return next();
+  }
+
+  const raw = typeof req.body === 'string' ? req.body : '';
+  req.rawBody = raw;
+
+  try {
+    // Clean common invisible/control characters that break JSON.parse
+    const cleaned = raw
+      .replace(/\uFEFF/g, '')
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+      .trim();
+
+    req.safeBody = cleaned ? JSON.parse(cleaned) : {};
+  } catch {
+    // failed to parse → keep raw string so routes can decide how to handle it
+    req.safeBody = raw;
+  }
+  next();
+});
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -41,7 +72,7 @@ const isMalicious = (s = "") => {
 };
 
 // Helper: check if object has any keys (safely)
-const hasKeys = (obj) => obj && typeof obj === "object" && Object.keys(obj).length > 0;
+const hasKeys = (obj) => obj && typeof obj === "object" && !Array.isArray(obj) && Object.keys(obj).length > 0;
 
 // =================================================================
 // 👇 UNIFIED MOCK ENDPOINTS (GET & POST) 👇
@@ -56,6 +87,9 @@ app.options('/users', (req, res) => {
 
 // 1. GET /users - Retrieve Users
 app.get('/users', (req, res) => {
+  // Use safeBody (GET should normally have none)
+  const body = (req.safeBody && typeof req.safeBody === 'object') ? req.safeBody : {};
+
   // If client sent a content-type but it's not application/json, reject.
   const contentType = req.headers['content-type'];
   if (contentType && !contentType.includes('application/json')) {
@@ -63,7 +97,7 @@ app.get('/users', (req, res) => {
   }
 
   // Enforce GET must not have a body (strict)
-  if (hasKeys(req.body)) {
+  if (hasKeys(body)) {
     return res.status(400).json({ error: "GET request must not have a body" });
   }
 
@@ -98,8 +132,11 @@ app.get('/users', (req, res) => {
 
 // 2. POST /users - Create User
 app.post('/users', (req, res) => {
+  // Accept either parsed object (if valid JSON) or raw string (invalid JSON testcases)
+  const body = (req.safeBody && typeof req.safeBody === 'object') ? req.safeBody : (typeof req.safeBody === 'string' ? { raw: req.safeBody } : {});
+
   const allowedKeys = ['name', 'email'];
-  const receivedKeys = Object.keys(req.body || {});
+  const receivedKeys = Object.keys(body || {});
 
   // Strict Payload Validation (No extra fields)
   const extraKeys = receivedKeys.filter(key => !allowedKeys.includes(key));
@@ -107,7 +144,7 @@ app.post('/users', (req, res) => {
     return res.status(400).json({ error: `Unexpected fields detected: ${extraKeys.join(', ')}` });
   }
 
-  const { name, email } = req.body || {};
+  const { name, email } = body || {};
 
   // Type Checking
   if (typeof name !== 'string' || typeof email !== 'string') {
@@ -157,6 +194,17 @@ app.all('/users', (req, res) => {
 // =================================================================
 
 app.use('/', testRoutes);
+
+// JSON parse error handler (defensive: returns controlled 400 + raw preview)
+// Place before the global errorHandler so it can handle body-parsing type errors if any
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    console.warn('JSON parse failed. Raw body (preview):', String(req.rawBody ?? '').slice(0, 1000));
+    return res.status(400).json({ success: false, error: 'Invalid JSON received', rawPreview: String(req.rawBody ?? '').slice(0, 1000) });
+  }
+  next(err);
+});
+
 app.use(errorHandler);
 
 export default app;

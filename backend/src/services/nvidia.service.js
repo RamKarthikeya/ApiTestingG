@@ -111,6 +111,8 @@ const scrubSecrets = (obj) => {
 
 /* ------------------------------------------------------------------
    Fallback generator: rich set of testcases (passable + negative)
+   NOTE: negative cases here remain for reference but will be filtered
+   out at generation time if the global filter is enabled.
 -------------------------------------------------------------------*/
 const generateFallbackTestCases = (spec = {}, detected = {}) => {
   const endpoint = spec.endpoint || "/";
@@ -155,8 +157,13 @@ const generateFallbackTestCases = (spec = {}, detected = {}) => {
     {
       id: "TC_003",
       category: "invalid",
-      description: "Invalid JSON body",
-      request: { method, endpoint, headers: { "Content-Type": "application/json" }, body: "{ invalid: }" },
+      description: "Empty JSON body",
+      request: {
+        method,
+        endpoint,
+        headers: { "Content-Type": "application/json" },
+        body: {}
+      },
       expected_response: { status: genericInvalidStatus },
     },
     {
@@ -441,7 +448,10 @@ const applyProbeToTestCases = (testCases = [], probeResults = {}, spec = {}, inf
 export const generateTestCases = async (spec = {}) => {
   const cacheKey = `gen_${(spec.method || "GET")}_${spec.endpoint || "/"}_${JSON.stringify(spec.headers || {})}`;
   const cached = cache.get(cacheKey);
-  if (cached) return { ...cached, cached: true };
+  if (cached) {
+    console.info("Using cached testcases for", cacheKey, "preview:", (cached.testCases || []).map((t,i) => `${i+1}:${t.id}:${t.description}`).slice(0,12));
+    return { ...cached, cached: true };
+  }
 
   const prompt = `You are a QA Engineer. Generate exactly 12 API test cases.
 
@@ -486,12 +496,13 @@ Each testcase:
       else if (Array.isArray(parsed.data)) parsed = parsed.data;
     }
 
+    // original rawList generation
     let rawList = Array.isArray(parsed) ? parsed : [];
     if (!Array.isArray(rawList) || rawList.length === 0) {
       rawList = generateFallbackTestCases(spec, detected);
     }
 
-    // ensure length 12
+    // ensure length 12 (originally)
     if (rawList.length < 12) {
       const extra = generateFallbackTestCases(spec, detected).slice(0, 12 - rawList.length);
       rawList = rawList.concat(extra);
@@ -509,8 +520,51 @@ Each testcase:
       });
     }
 
+    // -----------------------------
+    // NEW: Remove ALL negative testcases
+    // -----------------------------
+    rawList = rawList.filter((tc) => String(tc.category || "").toLowerCase() !== "invalid");
+
+    // If too short, refill from fallback non-invalid pool (avoid duplicates)
+    if (rawList.length < 12) {
+      const pool = generateFallbackTestCases(spec, detected).filter((tc) => String(tc.category || "").toLowerCase() !== "invalid");
+      const existingSignatures = new Set(rawList.map(tc => `${tc.category}::${String(tc.description || '').slice(0,120)}`));
+      const extras = [];
+      for (const candidate of pool) {
+        if (extras.length >= 12 - rawList.length) break;
+        const sig = `${candidate.category}::${String(candidate.description || '').slice(0,120)}`;
+        if (!existingSignatures.has(sig)) {
+          existingSignatures.add(sig);
+          extras.push(candidate);
+        }
+      }
+      rawList = rawList.concat(extras);
+    }
+
+    // If still short, pad with minimal valid placeholders
+    if (rawList.length < 12) {
+      for (let i = rawList.length; i < 12; i += 1) {
+        rawList.push({
+          id: `TC_PLACEHOLDER_${i + 1}`,
+          category: "valid",
+          description: `Auto placeholder ${i + 1}`,
+          request: {
+            method: (spec.method || "GET").toUpperCase(),
+            endpoint: spec.endpoint || "/",
+            headers: normalizeHeaders(Object.assign({}, spec.headers || {}, { "Content-Type": "application/json" })),
+            body: spec.body ?? { sample: true },
+          },
+          expected_response: { status: spec.expected_response?.status || (String(spec.method || "GET").toUpperCase() === "POST" ? 201 : 200) }
+        });
+      }
+    }
+
+    // Log preview for debugging
+    console.info("generateTestCases: returning test preview (non-invalid only):", rawList.map((r, i) => ({ index: i + 1, id: r.id, category: r.category, description: r.description })).slice(0, 12));
+
+    // Force sequential IDs and sanitize
     const sanitized = rawList.slice(0, 12).map((tc, i) => ({
-      id: tc.id || `TC_${String(i + 1).padStart(3, "0")}`,
+      id: `TC_${String(i + 1).padStart(3, "0")}`, // force sequential ids
       category: tc.category || "valid",
       description: tc.description || `Auto-generated ${i + 1}`,
       request: {

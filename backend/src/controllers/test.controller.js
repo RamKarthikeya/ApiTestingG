@@ -5,20 +5,40 @@ import { runTestSuite } from "../services/runner.service.js";
 
 export const generate = async (req, res, next) => {
   try {
-    const spec = testSpecSchema.parse(req.body);
+    const incoming = req.safeBody ?? {};
+
+    if (typeof incoming === "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid JSON in request body",
+        raw: incoming.slice ? incoming.slice(0, 2000) : incoming
+      });
+    }
+
+    const spec = testSpecSchema.parse(incoming);
     const data = await generateTestCases(spec);
-    res.json({ success: true, ...data });
+    return res.json({ success: true, ...data });
   } catch (err) {
-    next(err);
+    return next(err);
   }
 };
 
 export const run = async (req, res, next) => {
   try {
-    const { testCases, targetUrl, concurrency } = runTestsSchema.parse(req.body);
+    const incoming = req.safeBody ?? {};
+
+    if (typeof incoming === "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid JSON in request body for /run-tests",
+        raw: incoming.slice ? incoming.slice(0, 2000) : incoming
+      });
+    }
+
+    const { testCases, targetUrl, concurrency } = runTestsSchema.parse(incoming);
     const data = await runTestSuite(testCases, targetUrl, concurrency);
-    res.json({ success: true, ...data });
+    return res.json({ success: true, ...data });
   } catch (err) {
-    next(err);
+    return next(err);
   }
 };
